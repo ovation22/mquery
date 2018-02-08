@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -32,24 +34,40 @@ type Payload struct {
 	Platform     string   `json:"platform,omitempty"`
 }
 
+func stripSpaces(inStr string) string {
+	//split on a new line as stdin appends \n
+	parts := strings.Split(inStr, "\n")
+	//return te part before the first newline with all spaces removed
+	return strings.Replace(parts[0], " ", "", -1)
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Printf("ERROR: Must provide an image name as a command line parameter.\n")
-		os.Exit(1)
+
+	input, err := ioutil.ReadAll(os.Stdin)
+
+	if err != nil {
+		log.Fatal("Unable to read standard input:", err)
 	}
+
+	inputStr := stripSpaces(string(input))
+
+	if len(inputStr) == 0 {
+		log.Fatalln("An image name is required.\n")
+	}
+
 	qparam := &QueryParams{
-		Image: os.Args[1],
+		Image: inputStr,
 	}
+
 	response := new(ImageDataResponse)
 	resp, err := sling.New().Base(baseURL).QueryStruct(qparam).ReceiveSuccess(response)
 	if err != nil {
 		fmt.Printf("ERROR: failed to query backend: %v\n", err)
-		os.Exit(1)
 	}
-	os.Exit(processResponse(resp, os.Args[1], response))
+	os.Exit(processResponse(resp, response))
 }
 
-func processResponse(resp *http.Response, imageName string, response *ImageDataResponse) int {
+func processResponse(resp *http.Response, response *ImageDataResponse) int {
 	if resp.StatusCode != 200 {
 		// non-success RC from our http request
 		fmt.Printf("ERROR: Failure code from our HTTP request: %d\n", resp.StatusCode)
@@ -60,20 +78,19 @@ func processResponse(resp *http.Response, imageName string, response *ImageDataR
 		fmt.Printf("ERROR: %s\n", response.Error)
 		return 1
 	}
-	printManifestInfo(imageName, response)
+	printManifestInfo(response)
 	return 0
 }
 
-func printManifestInfo(imageName string, response *ImageDataResponse) {
-	fmt.Printf("Image: %s\n", imageName)
-	fmt.Printf(" * Manifest List: %s\n", response.ImageData.ManifestList)
+func printManifestInfo(response *ImageDataResponse) {
+	fmt.Printf("Manifest List: %s\n", response.ImageData.ManifestList)
 	if strings.Compare(response.ImageData.ManifestList, "Yes") == 0 {
-		fmt.Println(" * Supported platforms:")
+		fmt.Println("Supported platforms:")
 		for _, archosPair := range response.ImageData.ArchList {
-			fmt.Printf("   - %s\n", archosPair)
+			fmt.Printf(" - %s\n", archosPair)
 		}
 	} else {
-		fmt.Printf(" * Supports: %s\n", response.ImageData.Platform)
+		fmt.Printf(" Supports: %s\n", response.ImageData.Platform)
 	}
 	fmt.Println("")
 }
